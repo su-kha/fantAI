@@ -1,0 +1,23 @@
+# Ambiente Virtuale (uv)
+.venv/
+env/
+
+# Cache di Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDE e OS
+.vscode/
+.idea/
+.DS_Store
+
+# Dati (IGNORIAMO I FILE MA TENIAMO LE CARTELLE)
+data/**/*.csv
+data/**/*.json
+data/**/*.sqlite
+data/**/*.db
+
+# File di ambiente / Segreti
+.env
