@@ -25,6 +25,10 @@
 * **Monitoraggio Inflazione (Opponent Tracking):** Tracciamento dei crediti residui degli avversari in tempo reale. Se il mercato sovrapaga i giocatori all'inizio, l'agente deve aggiustare i prezzi stimati dei top player rimanenti.
 * **Ricalcolo VORP Real-Time:** Aggiornamento live del valore dei giocatori disponibili basato sugli slot vuoti rimanenti nella tua rosa e nei roster avversari.
 
+
+* GESTIRE I VICE (PER PORTIERI AD ESEMPIO)
+* GESTIRE COPPIE DI PORTIERI IN CASA
+
 ---
 
 ## Fase 4: Integrazione Live e Fail-Safe (Giorni 22-26)
