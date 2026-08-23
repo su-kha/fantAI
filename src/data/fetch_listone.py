@@ -77,7 +77,8 @@ def fetch_and_merge_listone():
     df_master = df_master[df_master['in_listone'] == True].copy()
     
     # Calcolo FVA Assoluto (Lega a 10 con Modificatore)
-    df_master['fva_assoluto'] = (df_master['perc_classic_10_mod'] / 100) * BUDGET_LEGA
+    # Il valore di FantaLab è la percentuale del budget totale (es. Lautaro 32.8%)
+    df_master['fva_assoluto'] = (df_master['classic_10_mod_median'] / 100) * BUDGET_LEGA
     df_master['fva_assoluto'] = df_master['fva_assoluto'].round(0)
     
     colonne_finali = {
