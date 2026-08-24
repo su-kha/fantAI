@@ -12,6 +12,9 @@ load_dotenv()
 # ==========================================
 AUTH_TOKEN = os.getenv('FANTALAB_TOKEN')
 BUDGET_LEGA = int(os.getenv('BUDGET_LEGA', 500)) # Default a 500 se non specificato
+PARTECIPANTI_LEGA = int(os.getenv('PARTECIPANTI_LEGA', 10))
+# Controlla se l'utente ha impostato USO_MODIFICATORE a True (o 1, o T). Default: True
+USO_MODIFICATORE = os.getenv('USO_MODIFICATORE', 'True').lower() in ('true', '1', 't')
 
 if not AUTH_TOKEN:
     raise ValueError("ERRORE: FANTALAB_TOKEN non trovato. Assicurati di aver creato il file .env e inserito il token.")
@@ -76,9 +79,27 @@ def fetch_and_merge_listone():
     # Filtro giocatori attivi nel listone
     df_master = df_master[df_master['in_listone'] == True].copy()
     
-    # Calcolo FVA Assoluto (Lega a 10 con Modificatore)
-    # Il valore di FantaLab è la percentuale del budget totale (es. Lautaro 32.8%)
-    df_master['fva_assoluto'] = (df_master['classic_10_mod_median'] / 100) * BUDGET_LEGA
+    # ==========================================
+    # CALCOLO FVA DINAMICO 
+    # ==========================================
+    # 1. Gestione modificatore
+    str_mod = "_mod" if USO_MODIFICATORE else "_no_mod"
+    
+    # 2. Gestione partecipanti (fallback a 10 se FantaLab non supporta il numero esatto)
+    partecipanti_fva = PARTECIPANTI_LEGA
+    if PARTECIPANTI_LEGA not in [8, 10, 12]:
+        print(f"⚠️ Numero partecipanti ({PARTECIPANTI_LEGA}) non supportato per le stime FVA. Uso il setup a 10.")
+        partecipanti_fva = 10
+        
+    colonna_fva = f"classic_{partecipanti_fva}{str_mod}_median"
+    
+    if colonna_fva not in df_master.columns:
+        print(f"⚠️ ATTENZIONE: Colonna {colonna_fva} non trovata. Fallback d'emergenza su classic_10_mod_median")
+        colonna_fva = "classic_10_mod_median"
+        
+    print(f"Sto calcolando l'FVA basandomi sulla colonna FantaLab: {colonna_fva}")
+    
+    df_master['fva_assoluto'] = (df_master[colonna_fva] / 100) * BUDGET_LEGA
     df_master['fva_assoluto'] = df_master['fva_assoluto'].round(0)
     
     colonne_finali = {
