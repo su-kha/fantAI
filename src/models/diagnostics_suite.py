@@ -47,10 +47,27 @@ def run_simulation(df_raw, p_storico, mod_mult, base_D, base_C, base_A, partecip
     
     budget_disp = (budget_singolo * partecipanti) - (25 * partecipanti)
     if df['vorp'].sum() > 0:
-        df['valore_ai'] = 1 + (df['vorp'] * (budget_disp / df['vorp'].sum()))
+        df['valore_ai_vorp'] = 1 + (df['vorp'] * (budget_disp / df['vorp'].sum()))
     else:
-        df['valore_ai'] = 1.0
-        
+        df['valore_ai_vorp'] = 1.0
+
+    # --- INIZIO MOTORE DI EFFICIENZA RISERVE ---
+    # 1. Delta Efficienza: quanto rende a partita rispetto al tappabuco peggiore
+    df['delta_efficienza'] = df['fmv_ibrida'] - df['ruolo'].map(fmv_panchinaro)
+    
+    # 2. Filtro: deve garantire almeno ~8 presenze (1/5 di campionato) per essere una riserva utile
+    cond_affidabilita = df['presenze_stimate'] >= 8.0
+    
+    # 3. Conversione Monetaria: ogni 0.1 di media in più vale 1 credito. 
+    # (es: se un difensore ha 6.2 contro i 5.8 di base, delta = +0.4 -> Premium = 4 crediti)
+    df['premium_riserva'] = 0.0
+    cond_premium = cond_affidabilita & (df['delta_efficienza'] > 0)
+    df.loc[cond_premium, 'premium_riserva'] = df.loc[cond_premium, 'delta_efficienza'] * 10.0
+    
+    # 4. Fusione: Il valore finale è il MASSIMO tra il VORP (per i titolari) e il Premium (per le riserve)
+    df['valore_ai'] = np.maximum(df['valore_ai_vorp'], 1.0 + df['premium_riserva'])
+    # --- FINE MOTORE EFFICIENZA ---
+
     df['valore_ai'] = df['valore_ai'].round(1)
     
     # Calcolo Metriche
@@ -82,9 +99,9 @@ def run_suite():
     else:
         mod_multipliers = [0.0]    
 
-    # Scaliamo le baseline di test in base ai partecipanti
-    baselines_D = [int(partecipanti * 3.0), int(partecipanti * 3.5)]
-    baselines_C = [int(partecipanti * 3.0), int(partecipanti * 3.5)]
+    # Scaliamo le baseline di test in base ai partecipanti (ampliata per trovare l'ottimo reale)
+    baselines_D = [int(partecipanti * 3.5), int(partecipanti * 4.0), int(partecipanti * 4.5)]
+    baselines_C = [int(partecipanti * 3.5), int(partecipanti * 4.0), int(partecipanti * 4.5)]
     baselines_A = [int(partecipanti * 2.5), int(partecipanti * 3.0)]
     
     risultati = []

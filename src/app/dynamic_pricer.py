@@ -135,9 +135,15 @@ class AuctionEngine:
             miei_portieri = [p for p in miei_giocatori if p['ruolo'] == 'P']
             squadre_miei_portieri = [p['squadra'] for p in miei_portieri]
             
-            if squadra in squadre_miei_portieri:
+            # Contiamo QUANTI portieri di questa squadra abbiamo già
+            omonimi_squadra = squadre_miei_portieri.count(squadra)
+            
+            if omonimi_squadra == 1:
                 messaggio_tattico = "🎯 VICE PORTIERE! (Prendilo a 1 credito)"
                 multiplier = 1.3 
+            elif omonimi_squadra >= 2:
+                messaggio_tattico = "🚫 SLOT SPRECATO! Hai già 2 portieri di questo club, usa l'ultimo slot per l'incrocio."
+                multiplier = 0.50 # Farà scattare il Max Bid a 0 grazie alla logica di blocco
             elif len(miei_portieri) > 0:
                 squadra_primo_portiere = squadre_miei_portieri[0]
                 sovrapposizioni = get_sovrapposizioni(squadra, squadra_primo_portiere)
@@ -150,7 +156,7 @@ class AuctionEngine:
                     multiplier = 1.10
                 elif sovrapposizioni >= 13:
                     messaggio_tattico = f"❌ PESSIMO INCROCIO con {squadra_primo_portiere} ({sovrapposizioni} sovrapposizioni, evitalo!)"
-                    multiplier = 0.70 
+                    multiplier = 0.70
         else:
             miei_stesso_ruolo = [p for p in miei_giocatori if p['ruolo'] == ruolo]
             omonimi_squadra = len([p for p in miei_stesso_ruolo if p['squadra'] == squadra])
@@ -176,8 +182,15 @@ class AuctionEngine:
         player = df_liberi[df_liberi['nome'] == player_name].iloc[0]
         ruolo = player['ruolo']
         
+        # --- FIX: IL PARADOSSO DEL BALLOTTAGGIO PORTIERI ---
+        # Se il VORP ha ucciso il valore di un portiere per via delle presenze spaccate, 
+        # lo "salviamo" usando il FVA (Fanta Valore Assoluto) di FantaLab.
+        valore_base = player['valore_ai']
+        if ruolo == 'P' and valore_base < player['fva_mercato']:
+            valore_base = player['fva_mercato']
+            
         inflazione = self.calculate_inflation_index()
-        valore_ai_live = player['valore_ai'] * inflazione
+        valore_ai_live = valore_base * inflazione
         
         valore_ai_tattico, avviso = self.apply_strategic_modifiers(player, valore_ai_live)
         
@@ -189,12 +202,13 @@ class AuctionEngine:
         limite_budget_reparto = max(1, budget_reparto - (slot_vuoti_reparto - 1)) if slot_vuoti_reparto > 0 else 0
         
         if limite_budget_reparto > 0:
-            max_bid_consigliato = min(limite_budget_reparto, int(valore_ai_tattico))
+            tetto_tattico = int(valore_ai_tattico)
+            max_bid_consigliato = min(limite_budget_reparto, tetto_tattico)
             
-            # NOVITÀ: Se c'è un blocco squadra o un pessimo incrocio, SCONSIGLIA l'acquisto (Max Bid 0)
-            if "🚫 BLOCCO SQUADRA" in avviso or "❌ PESSIMO INCROCIO" in avviso:
+            # --- FIX: INTERCETTAZIONE UNIVERSALE DEI DIVIETI ---
+            # Se c'è un'emoji di stop o errore, il Max Bid diventa categoricamente 0.
+            if "🚫" in avviso or "❌" in avviso:
                 max_bid_consigliato = 0
-            # Altrimenti garantisce almeno 1 credito
             elif max_bid_consigliato < 1:
                 max_bid_consigliato = 1
         else:
