@@ -9,3 +9,7 @@ Sfruttando metriche di *Value Over Replacement Player* (VORP), modelli statistic
 - **Entity Resolution & Storage:** Mapping univoco dei giocatori tramite ID proprietari per evitare conflitti di omonimia e tracking dello storico delle ultime stagioni.
 - **Motore Statistico VORP:** Calcolo del "Willingness to Pay" basato sulle differenze marginali tra i titolari e i panchinari di lega.
 - **Dynamic Budget Allocation:** Ricalcolo live del budget durante le chiamate sequenziali (Portieri -> Difensori -> Centrocampisti -> Attaccanti).
+
+
+
+#### TODO: CONTROLLARE QUANTO E' FUTURE PROOF

@@ -11,17 +11,26 @@ load_dotenv()
 # CONFIGURAZIONE DINAMICA
 # ==========================================
 AUTH_TOKEN = os.getenv('FANTALAB_TOKEN')
-BUDGET_LEGA = int(os.getenv('BUDGET_LEGA', 500)) # Default a 500 se non specificato
+BUDGET_LEGA = int(os.getenv('BUDGET_LEGA', 500))
 PARTECIPANTI_LEGA = int(os.getenv('PARTECIPANTI_LEGA', 10))
-# Controlla se l'utente ha impostato USO_MODIFICATORE a True (o 1, o T). Default: True
 USO_MODIFICATORE = os.getenv('USO_MODIFICATORE', 'True').lower() in ('true', '1', 't')
+import datetime
+
+# 1. Prende l'anno dal .env, o se manca lo deduce automaticamente dalla data di oggi
+anno_default = datetime.datetime.now().year if datetime.datetime.now().month > 6 else datetime.datetime.now().year - 1
+ANNO_INIZIO = int(os.getenv('ANNO_INIZIO_CAMPIONATO', anno_default))
+
+# 2. FantaLab usa l'ID 17 per il 2026. Quindi la formula matematica è Anno - 2009
+SEASON_ID = ANNO_INIZIO - 2009
+
+# 3. Costruisce la stringa 's_26_27'
+SEASON_STR = f"s_{str(ANNO_INIZIO)[-2:]}_{str(ANNO_INIZIO+1)[-2:]}"
 
 if not AUTH_TOKEN:
-    raise ValueError("ERRORE: FANTALAB_TOKEN non trovato. Assicurati di aver creato il file .env e inserito il token.")
+    raise ValueError("ERRORE: FANTALAB_TOKEN non trovato nel .env")
 # ==========================================
 
 def get_headers(is_cross_site=False):
-    """Genera gli headers standard. I ratings usano cross-site perché su CDN esterna."""
     return {
         'Content-Type': 'application/json',
         'Accept': '*/*',
@@ -39,66 +48,87 @@ def get_headers(is_cross_site=False):
 def fetch_and_merge_listone():
     print("Avvio estrazione dati da FantaLab...")
     
-    # 1. URLs
+    # URLs
     url_info = "https://api.fantalab.it/players/get-season-info-cached-25"
     url_prices = "https://manager.fantalab.it/get-new-prices"
     url_ratings = "https://api-cdn.falsesoftware.com/v2/ratings"
+    url_teams = "https://api-cdn.falsesoftware.com/v2/players/list"
     
-    # 2. Generazione parametri dinamici
-    current_timestamp = str(int(time.time() * 1000)) # Genera il timestamp attuale
+    current_timestamp = str(int(time.time() * 1000)) 
     
-    params_data_players = {'lastUpdate': current_timestamp}
-    json_data_prices = {'season_id': 17}
-    
-    # 3. Chiamate API
-    print("1/3 - Scaricamento anagrafica e storico...")
-    res_info = requests.get(url_info, headers=get_headers(), params=params_data_players) 
+    # 1. Anagrafica base
+    print("1/4 - Scaricamento anagrafica base...")
+    res_info = requests.get(url_info, headers=get_headers(), params={'lastUpdate': current_timestamp}) 
     res_info.raise_for_status()
-    
-    lista_giocatori = [
-        {'player_id': info['player_id'], 'name': info['name'], 'role': info['role']}
-        for pid, info in res_info.json().items()
-    ]
+    lista_giocatori = [{'player_id': k, 'name': v['name'], 'role': v['role']} for k, v in res_info.json().items()]
     df_players = pd.DataFrame(lista_giocatori)
 
-    print("2/3 - Scaricamento quotazioni attuali...")
-    res_prices = requests.post(url_prices, headers=get_headers(), json=json_data_prices)
+    # 2. Quotazioni
+    print("2/4 - Scaricamento quotazioni attuali...")
+    res_prices = requests.post(url_prices, headers=get_headers(), json={'season_id': SEASON_ID})
     res_prices.raise_for_status()
     df_prices = pd.DataFrame(res_prices.json())
     
-    print("3/3 - Scaricamento indici e FVA...")
+    # 3. Indici FVA
+    print("3/4 - Scaricamento indici e FVA...")
     res_ratings = requests.get(url_ratings, headers=get_headers(is_cross_site=True))
     res_ratings.raise_for_status()
     df_ratings = pd.DataFrame(res_ratings.json()['data'])
 
-    # 4. Merge e Pulizia
+    # 4. Estrazione LIVE Squadre (Aggiramento Impaginazione perfetto)
+    print("4/4 - Estrazione LIVE aggiornata delle squadre (Anti-bot attivato)...")
+    teams_data = []
+    ruoli_fantalab = ['P', 'D', 'C', 'A']
+    limit = 50 # Chiediamo 50 giocatori alla volta per essere sicuri
+    
+    for ruolo in ruoli_fantalab:
+        offset = 0
+        while True:
+            params_teams = {
+                'leagues': 'serie_a',
+                'limit': str(limit),
+                'listone_scope': 'serie_a',
+                'offset': str(offset),
+                'role': ruolo,
+                'season': SEASON_STR,
+                'sort_order': 'DESC',
+                'sort_stat': 'fmv',
+                'stats': 'quotazione' # Inseriamo una statistica minima per far felice il server
+            }
+            res_teams = requests.get(url_teams, headers=get_headers(is_cross_site=True), params=params_teams)
+            res_teams.raise_for_status() # Se c'è un errore si ferma qui e ce lo dice
+            
+            players_chunk = res_teams.json().get('players', [])
+            if not players_chunk:
+                break # Nessun giocatore rimasto in questo ruolo
+                
+            for p in players_chunk:
+                teams_data.append({
+                    'player_id': p['player_id'],
+                    'team': p.get('team_name', 'Sconosciuta')
+                })
+                
+            offset += limit
+            time.sleep(0.5) # Pausa tra le richieste per simulare l'umano
+            
+    df_teams = pd.DataFrame(teams_data).drop_duplicates(subset=['player_id'])
+
+    # === MERGE E PULIZIA ===
     print("Eseguo il merge dei dati...")
     df_master = df_players.merge(df_prices, on='player_id', how='left')
     df_master = df_master.merge(df_ratings, on='player_id', how='left')
+    df_master = df_master.merge(df_teams, on='player_id', how='left')
     
-    # Filtro giocatori attivi nel listone
     df_master = df_master[df_master['in_listone'] == True].copy()
     
-    # ==========================================
-    # CALCOLO FVA DINAMICO 
-    # ==========================================
-    # 1. Gestione modificatore
+    # Calcolo FVA DINAMICO
     str_mod = "_mod" if USO_MODIFICATORE else "_no_mod"
-    
-    # 2. Gestione partecipanti (fallback a 10 se FantaLab non supporta il numero esatto)
-    partecipanti_fva = PARTECIPANTI_LEGA
-    if PARTECIPANTI_LEGA not in [8, 10, 12]:
-        print(f"⚠️ Numero partecipanti ({PARTECIPANTI_LEGA}) non supportato per le stime FVA. Uso il setup a 10.")
-        partecipanti_fva = 10
-        
+    partecipanti_fva = PARTECIPANTI_LEGA if PARTECIPANTI_LEGA in [8, 10, 12] else 10
     colonna_fva = f"classic_{partecipanti_fva}{str_mod}_median"
     
     if colonna_fva not in df_master.columns:
-        print(f"⚠️ ATTENZIONE: Colonna {colonna_fva} non trovata. Fallback d'emergenza su classic_10_mod_median")
         colonna_fva = "classic_10_mod_median"
         
-    print(f"Sto calcolando l'FVA basandomi sulla colonna FantaLab: {colonna_fva}")
-    
     df_master['fva_assoluto'] = (df_master[colonna_fva] / 100) * BUDGET_LEGA
     df_master['fva_assoluto'] = df_master['fva_assoluto'].round(0)
     
@@ -106,6 +136,7 @@ def fetch_and_merge_listone():
         'player_id': 'id',
         'name': 'nome',
         'role': 'ruolo',
+        'team': 'squadra',
         'price': 'quotazione_iniziale',
         'fva_assoluto': 'fva_mercato',
         'xfmv': 'expected_fantamedia',
@@ -116,7 +147,6 @@ def fetch_and_merge_listone():
     
     df_final = df_master[list(colonne_finali.keys())].rename(columns=colonne_finali)
     
-    # 5. Salvataggio
     os.makedirs('data/01_raw', exist_ok=True)
     output_path = "data/01_raw/listone_corrente.csv"
     df_final.to_csv(output_path, index=False)

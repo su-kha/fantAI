@@ -99,9 +99,9 @@ def run_suite():
                         risultati.append(res)
     
     df_res = pd.DataFrame(risultati)
-    # Troviamo il modello migliore evitando prezzi estremi irrealistici (> 60% del budget)
-    cap_logico = budget_singolo * 0.60
-    best_models = df_res[df_res['max_price'] < cap_logico].sort_values(by='corr', ascending=False)
+    # Regola d'asta: il massimo spendibile è il budget totale meno 1 credito per ogni altro slot (24)
+    cap_matematico_assoluto = budget_singolo - 24
+    best_models = df_res[df_res['max_price'] < cap_matematico_assoluto].sort_values(by='corr', ascending=False)
     
     if best_models.empty:
         best_model = df_res.sort_values(by='corr', ascending=False).iloc[0]
